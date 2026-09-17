@@ -9,7 +9,9 @@
 
 ## 設計・実装時の指針
 
-- 依存は最小限に。Docling / EasyOCR 以外の重量級ライブラリを安易に追加しない。
+- 依存は最小限に。MarkItDown / RapidOCR（onnxruntime）以外の重量級ライブラリを安易に追加しない。
+  特にPyTorch・PaddlePaddleのような重量級の深層学習フレームワークは、モデルキャッシュ容量削減
+  （旧Docling + EasyOCR構成からの移行目的）を損なうため導入しない。
   ローカルLLMとの通信（`/v1/chat/completions`・`/v1/models`）は**標準ライブラリの`urllib.request`**で
   実装し、`openai`/`httpx`/`requests`等の追加HTTPクライアントライブラリは導入しない
   （単純なJSON POST/GETのみで、SDKの機能を必要としないため）。

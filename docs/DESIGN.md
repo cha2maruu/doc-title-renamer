@@ -10,8 +10,16 @@ and use them to automatically rename the files and organize them into folders.
 
 - Execution model: run directly from a GitHub repository via `uvx`; does not
   pollute the local environment.
-- Conversion/OCR engine: [Docling](https://github.com/docling-project/docling)
-- OCR backend: EasyOCR
+- Conversion engine: [MarkItDown](https://github.com/microsoft/markitdown)
+  — used for `.docx` / `.xlsx` / `.pptx` and PDFs with a text layer.
+- OCR engine: [RapidOCR](https://github.com/RapidAI/RapidOCR) (ONNX Runtime
+  based), called directly (not through a conversion-framework wrapper) for
+  PDFs without a text layer.
+  - This tool previously used Docling (with EasyOCR as its OCR backend) for
+    both conversion and OCR. It was replaced with MarkItDown + RapidOCR to
+    avoid the large model-cache footprint that Docling's own layout/table
+    models and EasyOCR's PyTorch-based models required (several hundred MB
+    combined), since this is a personal-use CLI tool distributed via `uvx`.
 - Title/date inference: a local LLM with an OpenAI-compatible API
   (`/v1/chat/completions` / `/v1/models`) — e.g.
   [LM Studio](https://lmstudio.ai/) or [Ollama](https://ollama.com/),
@@ -81,23 +89,31 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
 ### 4.4 Document content extraction (conversion to Markdown)
 
 - `.docx` / `.xlsx` / `.pptx` and PDFs with a text layer are converted to
-  Markdown using Docling.
+  Markdown using MarkItDown.
 - PDFs without a text layer (e.g. scanned PDFs) are converted to Markdown
   via OCR.
-  - The OCR engine is EasyOCR (used as a Docling backend). The recognition
-    language is set to **Japanese (`ja`)** (many documents mix in
-    alphanumeric text, so `en` is also used in addition where supported).
-  - **OCR is limited to the first 2 pages.** Pages from the 3rd page onward
-    are not processed, to keep processing time down. The page range is
-    passed directly into Docling's conversion call (rather than truncating
-    the result afterward), so pages beyond the 2nd are never actually
-    processed.
-  - During OCR, the following settings apply, so that only the minimum
-    information needed to infer a title is extracted:
-    - Page images are OCR'd, but figures/photos detected on the page are
-      not described (no caption generation) — they are left as
-      placeholders.
-    - Table structure is not analyzed.
+  - The OCR engine is RapidOCR, called directly by this tool (not wrapped
+    by a document-conversion framework). The recognition language is set
+    to **Japanese** (many documents mix in alphanumeric text, so a
+    Japanese-capable recognition model that also handles half-width
+    alphanumerics is used).
+  - **OCR is limited to the first 2 pages.** Pages from the 3rd page
+    onward are not processed, to keep processing time down. Since RapidOCR
+    is called directly rather than through a page-range-aware conversion
+    API, this is implemented by this tool: only the first 2 pages are
+    rendered to images (via `pypdfium2`, already used for text-layer
+    detection) and OCR is run only on those images — pages beyond the 2nd
+    are never rendered or processed.
+  - During OCR, the following apply, so that only the minimum information
+    needed to infer a title is extracted:
+    - Page images are OCR'd, but figures/photos are not described (no
+      caption generation) — detected image regions are represented as a
+      simple placeholder in the assembled Markdown/text, produced by this
+      tool's own OCR-result-to-text assembly step (there is no
+      conversion-framework document model to draw on, unlike the
+      MarkItDown/Docling path).
+    - Table structure is not reconstructed; OCR'd text is emitted as plain
+      lines in reading order rather than as Markdown tables.
 - **How the presence of a text layer is determined**: ordinary text
   extraction is attempted on the PDF's **first 2 pages** (matching the OCR
   scope), and if the total number of extracted characters (excluding
@@ -111,18 +127,19 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
 ### 4.5 Markdown cleaning
 
 - The Markdown extracted in 4.4 is cleaned **before** being passed to the
-  local LLM. OCR (EasyOCR in particular) and Docling's conversion output
-  tend to contain extraneous whitespace/noise that interferes with title
-  inference, so cleaning raises the information density before truncating
-  to the character limit in 4.6 (the first ~5000 characters). The order is
-  strictly "extract → clean → truncate to the first N characters."
+  local LLM. OCR output (RapidOCR in particular) and MarkItDown's
+  conversion output tend to contain extraneous whitespace/noise that
+  interferes with title inference, so cleaning raises the information
+  density before truncating to the character limit in 4.6 (the first
+  ~5000 characters). The order is strictly "extract → clean → truncate to
+  the first N characters."
   - **Whitespace compaction**: collapse runs of half-width spaces/tabs into
     one. Full-width spaces (`　`) are treated the same way.
-  - **Removal of stray spaces between CJK characters**: EasyOCR recognizes
-    Japanese text character-by-character and often inserts extra spaces
-    between characters (e.g. `見 積 書` → `見積書`). Spaces between
-    consecutive Kanji/Hiragana/Katakana characters are removed, while
-    spaces that separate half-width alphanumerics are preserved so
+  - **Removal of stray spaces between CJK characters**: character-based OCR
+    engines (RapidOCR included) can insert extra spaces between
+    consecutive Japanese characters (e.g. `見 積 書` → `見積書`). Spaces
+    between consecutive Kanji/Hiragana/Katakana characters are removed,
+    while spaces that separate half-width alphanumerics are preserved so
     word/number boundaries aren't accidentally destroyed.
   - **Blank-line compaction**: 3 or more consecutive blank lines are
     collapsed to one. Leading/trailing whitespace on each line is trimmed.
@@ -134,9 +151,10 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     `……………`, `..........`) are removed or compacted to roughly one
     character.
   - **Thinning of image placeholders**: consecutive image placeholders
-    inserted by Docling (e.g. `<!-- image -->`) are merged or thinned to
-    one, since they don't contribute to title inference and would
-    otherwise waste the character budget.
+    inserted by MarkItDown or by this tool's own OCR-result assembly (the
+    exact marker text is finalized during implementation) are merged or
+    thinned to one, since they don't contribute to title inference and
+    would otherwise waste the character budget.
   - **Removal of control/invisible characters**: OCR artifacts and
     zero-width spaces and the like, which carry no visible meaning, are
     removed.
@@ -384,8 +402,8 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
   an individual file**, that file alone is **skipped**, logged as an
   error, and processing continues for the remaining target files (the
   overall run is not aborted):
-  - Document content extraction/OCR (e.g. Docling) — encryption,
-    corruption, unsupported format, access denied, etc.
+  - Document content extraction/OCR (e.g. MarkItDown, RapidOCR) —
+    encryption, corruption, unsupported format, access denied, etc.
   - Querying the LLM — e.g. a per-file timeout, as distinct from the
     pre-flight connection check in 4.12.
   - Performing the rename/move — e.g. the file being open in another
@@ -418,9 +436,11 @@ entirely.")
 ## 5. Non-Functional Requirements
 
 - **Environment cleanliness**: the tool assumes execution via `uvx` and
-  does not modify the global site-packages. However, `uv`'s cache does
-  store dependency packages (Docling, EasyOCR, PyTorch, etc.) and OCR
-  model data, which can be fairly large.
+  does not modify the global site-packages. `uv`'s cache still stores
+  dependency packages (MarkItDown, RapidOCR, ONNX Runtime, etc.) and the
+  OCR model data, but this is intentionally kept much smaller than the
+  previous Docling + EasyOCR (PyTorch-based) setup by avoiding heavyweight
+  deep-learning frameworks (see 1. Overview).
 - **Processing speed**: OCR for scanned PDFs is limited to 2 pages, and
   table/image analysis is skipped, to keep per-file processing time down.
 - **Privacy**: all document analysis and title inference happens via a
@@ -431,9 +451,9 @@ entirely.")
   document content).
 - **Supported OS**: Windows only. Path handling and file operations are
   implemented assuming a Windows environment.
-- **Runtime environment**: Python 3.10+ (matching Docling's requirement).
-  GPU (CUDA) is not assumed; the initial version defaults to CPU
-  execution.
+- **Runtime environment**: Python 3.10+. GPU (CUDA) is not assumed; the
+  initial version defaults to CPU execution (RapidOCR's ONNX Runtime CPU
+  provider).
 
 ## 6. I/O Specification (overview)
 
@@ -463,9 +483,10 @@ entirely.")
    4.14):
    a. For a PDF, determine text-layer presence from the first 2 pages'
       extracted text.
-      - Present: extract via Docling.
-      - Absent: extract via EasyOCR (language: ja), first 2 pages only.
-   b. For docx/xlsx/pptx, extract via Docling.
+      - Present: extract via MarkItDown.
+      - Absent: extract via RapidOCR (language: Japanese), first 2 pages
+        only.
+   b. For docx/xlsx/pptx, extract via MarkItDown.
    c. Clean the extracted Markdown (whitespace compaction, CJK spacing
       fixes, Unicode normalization, noise-line removal, etc.), then send
       the first ~5000 characters to the local LLM (structured JSON output,
