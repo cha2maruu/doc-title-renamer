@@ -69,6 +69,19 @@ def install_fake_docling(monkeypatch: object) -> SimpleNamespace:
     )
 
 
+class FakeMarkItDown:
+    def __init__(self, **kwargs: object) -> None:
+        self.kwargs = kwargs
+
+
+def install_fake_markitdown(monkeypatch: object) -> SimpleNamespace:
+    markitdown = ModuleType("markitdown")
+    markitdown.MarkItDown = FakeMarkItDown  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "markitdown", markitdown)  # type: ignore[attr-defined]
+
+    return SimpleNamespace(MarkItDown=FakeMarkItDown)
+
+
 def build_minimal_pdf(page_texts: list[str | None]) -> bytes:
     objects: list[tuple[int, bytes]] = []
 

@@ -24,10 +24,12 @@
 - [x] `CLAUDE.md` の依存方針（Docling/EasyOCR以外は安易に追加しない、という記述）を更新
 
 ### 2. markitdown導入・Docling依存の除去（通常変換）
-- [ ] `pyproject.toml` に `markitdown` を追加、`docling` を除去
-- [ ] `src/doc_title_renamer/converter.py` を markitdown ベースに書き換え
-  （docx/xlsx/pptx/テキスト層PDFの変換）
-- [ ] markitdown出力のMarkdown書式差分（画像プレースホルダ等）を確認
+- [x] `pyproject.toml` に `markitdown[docx,xlsx,pptx,pdf]` を追加
+  （`docling`/`easyocr`はocr.py用に一旦残置。ステップ4で除去）
+- [x] `src/doc_title_renamer/converter.py` を markitdown ベースに書き換え
+  （docx/xlsx/pptx/テキスト層PDFの変換。`MarkItDown(enable_plugins=False).convert_local(path).markdown`）
+- [x] `tests/test_converter.py` / `tests/helpers.py`（`install_fake_markitdown`追加）を更新、`pytest`全77件通過確認
+- [ ] markitdown出力のMarkdown書式差分（画像プレースホルダ等）を実書類で確認
 
 ### 3. OCR自前実装（RapidOCR組み込み）
 - [ ] `src/doc_title_renamer/ocr.py` から Docling 経由の呼び出しを除去し、
