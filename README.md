@@ -72,7 +72,7 @@ uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer 
 - ローカルLLMへの接続先は `localhost` / `127.0.0.1` のみに固定しています（LAN上の別PCなどは指定できません）。
 - ローカルLLMに接続・モデルの解決ができない場合は、エラーを表示して処理全体を中断します。
 - 個別のファイルの変換・OCR・LLM問い合わせ・リネームに失敗した場合は、そのファイルだけをスキップして他のファイルの処理を続けます。
-- 初回実行時は、Docling・EasyOCR等の依存パッケージやOCR用モデルのダウンロードが発生し、時間がかかる場合があります（`uv`のキャッシュに保存され、2回目以降は高速になります）。
+- 初回実行時は、markitdown・RapidOCR等の依存パッケージやOCR用モデルのダウンロードが発生し、時間がかかる場合があります（`uv`のキャッシュに保存され、2回目以降は高速になります）。
 
 ## ドキュメント
 
@@ -83,4 +83,4 @@ uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer 
 
 ## ライセンス
 
-[MIT License](LICENSE)。直接依存する Docling・EasyOCR・pypdfium2 のライセンス表記は [NOTICE.md](NOTICE.md) を参照してください。
+[MIT License](LICENSE)。直接依存する markitdown・RapidOCR・ONNX Runtime・pypdfium2 のライセンス表記は [NOTICE.md](NOTICE.md) を参照してください。
