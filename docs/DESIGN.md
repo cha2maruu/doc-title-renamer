@@ -97,25 +97,13 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     to **Japanese** (many documents mix in alphanumeric text, so a
     Japanese-capable recognition model that also handles half-width
     alphanumerics is used).
-  - **OCR is limited to the first 2 pages.** Pages from the 3rd page
-    onward are not processed, to keep processing time down. Since RapidOCR
-    is called directly rather than through a page-range-aware conversion
-    API, this is implemented by this tool: only the first 2 pages are
-    rendered to images (via `pypdfium2`, already used for text-layer
-    detection) and OCR is run only on those images — pages beyond the 2nd
-    are never rendered or processed.
-  - During OCR, the following apply, so that only the minimum information
-    needed to infer a title is extracted:
-    - Page images are OCR'd, but figures/photos are not described (no
-      caption generation) — detected image regions are represented as a
-      simple placeholder in the assembled Markdown/text, produced by this
-      tool's own OCR-result-to-text assembly step (there is no
-      conversion-framework document model to draw on, unlike the
-      MarkItDown/Docling path).
-    - Table structure is not reconstructed; OCR'd text is emitted as plain
-      lines in reading order rather than as Markdown tables.
+  - **OCR processes all pages of the PDF.** An earlier design limited OCR
+    to the first 2 pages to keep processing time down, but this was
+    reevaluated against RapidOCR's (PP-OCRv6 small model) actual speed and
+    dropped as unnecessary — all pages are rendered to images (via
+    `pypdfium2`, already used for text-layer detection) and OCR'd.
 - **How the presence of a text layer is determined**: ordinary text
-  extraction is attempted on the PDF's **first 2 pages** (matching the OCR
+  extraction is attempted on **all of the PDF's pages** (matching the OCR
   scope), and if the total number of extracted characters (excluding
   whitespace) is under 50, the PDF is judged to have "no text layer" and is
   routed to OCR.
@@ -441,8 +429,9 @@ entirely.")
   OCR model data, but this is intentionally kept much smaller than the
   previous Docling + EasyOCR (PyTorch-based) setup by avoiding heavyweight
   deep-learning frameworks (see 1. Overview).
-- **Processing speed**: OCR for scanned PDFs is limited to 2 pages, and
-  table/image analysis is skipped, to keep per-file processing time down.
+- **Processing speed**: OCR for scanned PDFs processes all pages (RapidOCR's
+  PP-OCRv6 small model was evaluated as fast enough that a page-count limit
+  is unnecessary).
 - **Privacy**: all document analysis and title inference happens via a
   local LLM (OpenAI-compatible API, `localhost`-only — see 4.11); document
   content is never sent to an external cloud service. An internet
@@ -481,11 +470,10 @@ entirely.")
    error on failure).
 4. For each file (skip this file and continue on any per-file error, see
    4.14):
-   a. For a PDF, determine text-layer presence from the first 2 pages'
-      extracted text.
+   a. For a PDF, determine text-layer presence from all pages' extracted
+      text.
       - Present: extract via MarkItDown.
-      - Absent: extract via RapidOCR (language: Japanese), first 2 pages
-        only.
+      - Absent: extract via RapidOCR (language: Japanese), all pages.
    b. For docx/xlsx/pptx, extract via MarkItDown.
    c. Clean the extracted Markdown (whitespace compaction, CJK spacing
       fixes, Unicode normalization, noise-line removal, etc.), then send
@@ -515,9 +503,6 @@ entirely.")
 
 - Subfolders are out of scope (no recursive processing). Office temporary
   files starting with `~$` are also excluded.
-- Scanned PDFs are processed only for their first 2 pages.
-- Table-structure analysis and image-content analysis are not performed
-  during OCR.
 - The local LLM is assumed to be a small model; long input is never sent
   (limited to the first ~5000 characters).
 - Extracted Markdown is cleaned of whitespace/noise before being passed to

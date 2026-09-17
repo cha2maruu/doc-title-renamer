@@ -7,12 +7,10 @@ license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "markitdown[docx,xlsx,pptx,pdf]",
-    "docling",
-    "easyocr",
+    "rapidocr>=3.9.0",
+    "onnxruntime",
     "pypdfium2!=4.30.1,<6.0.0,>=4.30.0",
 ]
-# NOTE: docling / easyocr are still used by ocr.py (scanned-PDF OCR path) and
-# will be removed once that path is migrated to RapidOCR (TASK.md step 3-4).
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

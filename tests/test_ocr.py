@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import pytest
 
 from doc_title_renamer import ocr
-from doc_title_renamer.ocr import OCR_MAX_PAGES, TEXT_LAYER_MIN_CHARS, has_text_layer
+from doc_title_renamer.ocr import TEXT_LAYER_MIN_CHARS, has_text_layer
 
-from helpers import build_minimal_pdf, install_fake_docling
+from helpers import build_minimal_pdf, install_fake_rapidocr
 
 
 def write_pdf(path: Path, page_texts: list[str | None]) -> None:
@@ -37,75 +37,69 @@ def test_has_text_layer_at_character_count_boundary(tmp_path: Path) -> None:
     assert has_text_layer(below_threshold_pdf) is False
 
 
-def test_has_text_layer_ignores_pages_after_ocr_limit(tmp_path: Path) -> None:
+def test_has_text_layer_checks_all_pages(tmp_path: Path) -> None:
     pdf_path = tmp_path / "third-page-text.pdf"
-    page_texts = [None] * OCR_MAX_PAGES + ["A" * (TEXT_LAYER_MIN_CHARS + 1)]
-    write_pdf(pdf_path, page_texts)
+    write_pdf(pdf_path, [None, None, "A" * (TEXT_LAYER_MIN_CHARS + 1)])
 
-    assert has_text_layer(pdf_path) is False
+    assert has_text_layer(pdf_path) is True
 
 
-def test_create_ocr_converter_uses_fast_easyocr_settings(monkeypatch) -> None:
-    fake = install_fake_docling(monkeypatch)
-    ocr._create_ocr_converter.cache_clear()
+def test_create_ocr_engine_uses_ppocrv6_small_with_onnxruntime(monkeypatch) -> None:
+    fake = install_fake_rapidocr(monkeypatch)
+    ocr._create_ocr_engine.cache_clear()
 
     try:
-        document_converter = ocr._create_ocr_converter()
+        engine = ocr._create_ocr_engine()
 
-        assert document_converter.kwargs["allowed_formats"] == [fake.InputFormat.PDF]
-        pdf_format = document_converter.kwargs["format_options"][fake.InputFormat.PDF]
-        pipeline = pdf_format.kwargs["pipeline_options"].kwargs
-        assert pipeline["do_ocr"] is True
-        assert pipeline["ocr_options"].kwargs == {
-            "lang": ocr.OCR_LANGUAGES,
-            "use_gpu": False,
+        assert isinstance(engine, fake.RapidOCR)
+        assert engine.kwargs["params"] == {
+            "Det.engine_type": fake.Enum.ONNXRUNTIME,
+            "Det.lang_type": fake.Enum.CH,
+            "Det.model_type": fake.Enum.SMALL,
+            "Det.ocr_version": fake.Enum.PPOCRV6,
+            "Cls.engine_type": fake.Enum.ONNXRUNTIME,
+            "Cls.lang_type": fake.Enum.CH,
+            "Cls.model_type": fake.Enum.MOBILE,
+            "Cls.ocr_version": fake.Enum.PPOCRV4,
+            "Rec.engine_type": fake.Enum.ONNXRUNTIME,
+            "Rec.lang_type": fake.Enum.CH,
+            "Rec.model_type": fake.Enum.SMALL,
+            "Rec.ocr_version": fake.Enum.PPOCRV6,
         }
-        assert pipeline["do_table_structure"] is False
-        assert pipeline["do_picture_description"] is False
-        assert pipeline["generate_page_images"] is False
-        assert pipeline["generate_picture_images"] is False
     finally:
-        ocr._create_ocr_converter.cache_clear()
+        ocr._create_ocr_engine.cache_clear()
 
 
-def test_ocr_export_uses_image_placeholder(monkeypatch) -> None:
-    fake = install_fake_docling(monkeypatch)
-    calls: list[dict[str, object]] = []
+def test_ocr_result_to_text_preserves_detection_order() -> None:
+    result = SimpleNamespace(txts=("1行目", " 2行目 ", ""))
 
-    class FakeDocument:
-        def export_to_markdown(self, **kwargs: object) -> str:
-            calls.append(kwargs)
-            return "markdown"
-
-    assert ocr._export_to_markdown(FakeDocument()) == "markdown"
-    assert calls == [{"image_mode": fake.ImageRefMode.PLACEHOLDER}]
+    assert ocr._ocr_result_to_text(result) == "1行目\n2行目"
+    assert ocr._ocr_result_to_text(SimpleNamespace(txts=None)) == ""
 
 
-def test_ocr_to_markdown_limits_docling_conversion_to_first_two_pages(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_ocr_to_markdown_processes_all_pages(monkeypatch, tmp_path: Path) -> None:
     file_path = tmp_path / "scan.pdf"
-    document = object()
-    calls: list[tuple[Path, tuple[int, int]]] = []
-
-    class FakeConverter:
-        def convert(
-            self, source: Path, *, page_range: tuple[int, int]
-        ) -> SimpleNamespace:
-            calls.append((source, page_range))
-            return SimpleNamespace(document=document)
-
-    monkeypatch.setattr(ocr, "_create_ocr_converter", FakeConverter)
-    monkeypatch.setattr(
-        ocr,
-        "_export_to_markdown",
-        lambda converted_document: "OCR result"
-        if converted_document is document
-        else pytest.fail("unexpected document"),
+    write_pdf(file_path, [None, None, None])
+    calls: list[object] = []
+    results = iter(
+        [
+            SimpleNamespace(txts=("1ページ1行目", "1ページ2行目")),
+            SimpleNamespace(txts=()),
+            SimpleNamespace(txts=("3ページ1行目",)),
+        ]
     )
 
-    assert ocr.ocr_to_markdown(file_path) == "OCR result"
-    assert calls == [(file_path, (1, OCR_MAX_PAGES))]
+    def fake_engine(image: object) -> SimpleNamespace:
+        calls.append(image)
+        return next(results)
+
+    monkeypatch.setattr(ocr, "_create_ocr_engine", lambda: fake_engine)
+
+    assert ocr.ocr_to_markdown(file_path) == (
+        "1ページ1行目\n1ページ2行目\n\n3ページ1行目"
+    )
+    assert len(calls) == 3
+    assert all(getattr(image, "ndim", None) == 3 for image in calls)
 
 
 def test_ocr_to_markdown_rejects_non_pdf(tmp_path: Path) -> None:
