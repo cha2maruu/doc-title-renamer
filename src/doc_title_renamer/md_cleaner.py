@@ -8,8 +8,10 @@ _WHITESPACE_RE = re.compile(r"[ \t\u3000]+")
 _CJK = r"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u3040-\u30ff\u31f0-\u31ff"
 _CJK_SPACE_RE = re.compile(rf"(?<=[{_CJK}]) (?=[{_CJK}])")
 _NOISE_LINE_RE = re.compile(r"^(?:[-‐‑‒–—―ー─━_=~.．…・･·•●○]+)$")
-_IMAGE_PLACEHOLDER_RE = re.compile(
-    r"(?im)^<!--\s*image\s*-->$(?:\n(?:\s*\n)*<!--\s*image\s*-->$)+"
+_MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]\n]*\]\([^\n)]*\)")
+_CONSECUTIVE_IMAGES_RE = re.compile(
+    rf"(?m)^(?P<image>{_MARKDOWN_IMAGE_RE.pattern}) *$"
+    rf"(?:\n(?: *\n)* *(?:{_MARKDOWN_IMAGE_RE.pattern}) *$)+"
 )
 
 
@@ -37,6 +39,10 @@ def clean_markdown(markdown: str) -> str:
         lines.append(line)
 
     text = "\n".join(lines)
-    text = _IMAGE_PLACEHOLDER_RE.sub("<!-- image -->", text)
+    # MarkItDown emits placeholders as Markdown image lines (for example,
+    # ``![Picture 1](Picture1.jpg)``). Keep the first image and its potentially
+    # useful alt text, but discard immediately repeated image lines so they do
+    # not consume the LLM input budget. RapidOCR output is plain text.
+    text = _CONSECUTIVE_IMAGES_RE.sub(r"\g<image>", text)
     text = re.sub(r"\n(?:[ \t]*\n){3,}", "\n\n", text)
     return text.strip()

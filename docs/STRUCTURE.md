@@ -19,8 +19,8 @@ doc-title-renamer/
 │       ├── __init__.py
 │       ├── cli.py             # CLI entry point; dispatches the `rename-only` / `organize` subcommands
 │       ├── scanner.py          # Enumerates target files for a single file or a folder (with a stable sort)
-│       ├── converter.py        # Converts docx/xlsx/pptx/PDF to Markdown via Docling
-│       ├── ocr.py              # OCR for scanned PDFs (EasyOCR, first 2 pages only)
+│       ├── converter.py        # Converts docx/xlsx/pptx/PDF to Markdown via MarkItDown
+│       ├── ocr.py              # OCR for scanned PDFs (RapidOCR, all pages)
 │       ├── md_cleaner.py       # Markdown cleaning (whitespace compaction, CJK spacing fixes, NFKC normalization, noise-line removal)
 │       ├── date_parser.py      # Japanese-era-to-Gregorian conversion; validation of the LLM's issue date
 │       ├── llm_client.py       # Requests a title/issue-date guess from a local LLM (OpenAI-compatible API) via structured JSON output
@@ -51,15 +51,19 @@ doc-title-renamer/
   folder should be created for `organize` mode (the given folder itself, or
   the parent folder when a single file is given).
 - `converter.py`: converts docx/xlsx/pptx/PDF (with a text layer) to
-  Markdown via Docling.
-- `ocr.py`: converts PDFs without a text layer to Markdown via EasyOCR
-  (first 2 pages only, image placeholders, no table analysis, language
-  `ja`).
+  Markdown via MarkItDown (`enable_plugins=False`).
+- `ocr.py`: converts PDFs without a text layer to plain text via RapidOCR,
+  called directly (Det/Rec: PP-OCRv6 small, Cls: PP-OCRv4 mobile, all
+  ONNX Runtime, recognition language Japanese/`ch`). All pages are
+  rendered via `pypdfium2` and OCR'd (no page-count limit); page texts are
+  joined with a blank line to preserve page boundaries. Also provides
+  `has_text_layer` (checks all pages, 50-character threshold), used to
+  decide between the MarkItDown and OCR paths.
 - `md_cleaner.py`: cleans Markdown right after extraction and before it is
   passed to the LLM (whitespace/newline compaction, removal of stray
   spaces between CJK characters, Unicode normalization (NFKC), removal of
-  ruled-line-style noise lines, thinning of image placeholders, removal of
-  control characters).
+  ruled-line-style noise lines, thinning of consecutive MarkItDown image
+  placeholders down to the first one, removal of control characters).
 - `date_parser.py`: converts Japanese era dates to the Gregorian calendar
   (normalization before the LLM sees them), and **validates the issue date
   returned by the LLM** (whether it's a real calendar date, not too far in

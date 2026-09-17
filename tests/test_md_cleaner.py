@@ -18,10 +18,21 @@ def test_clean_markdown_removes_noise_and_invisible_characters() -> None:
     assert clean_markdown(markdown) == "件名\n\n本文"
 
 
-def test_clean_markdown_collapses_consecutive_image_placeholders() -> None:
-    markdown = "<!-- image -->\n\n<!--   image   -->\n<!-- image -->\n本文"
+def test_clean_markdown_collapses_consecutive_markitdown_images() -> None:
+    markdown = (
+        "![表紙](Picture1.jpg)\n\n"
+        "![ロゴ](Picture2.jpg)\n"
+        "![写真](Picture3.jpg)\n"
+        "本文"
+    )
 
-    assert clean_markdown(markdown) == "<!-- image -->\n本文"
+    assert clean_markdown(markdown) == "![表紙](Picture1.jpg)\n本文"
+
+
+def test_clean_markdown_keeps_separated_markitdown_images() -> None:
+    markdown = "![表紙](Picture1.jpg)\n説明文\n![図](Picture2.jpg)"
+
+    assert clean_markdown(markdown) == markdown
 
 
 def test_clean_markdown_applies_nfkc_without_reformatting_markdown() -> None:

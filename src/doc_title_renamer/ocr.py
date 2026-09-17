@@ -7,8 +7,7 @@ from typing import Any
 
 import pypdfium2 as pdfium
 
-OCR_MAX_PAGES = 2
-OCR_LANGUAGES = ["ja"]
+OCR_RENDER_SCALE = 2.0
 TEXT_LAYER_MIN_CHARS = 50
 
 
@@ -16,7 +15,7 @@ def has_text_layer(file_path: Path) -> bool:
     pdf = pdfium.PdfDocument(str(file_path))
     character_count = 0
     try:
-        for page_index in range(min(len(pdf), OCR_MAX_PAGES)):
+        for page_index in range(len(pdf)):
             page = pdf[page_index]
             try:
                 textpage = page.get_textpage()
@@ -34,39 +33,69 @@ def has_text_layer(file_path: Path) -> bool:
 
 
 @lru_cache(maxsize=1)
-def _create_ocr_converter() -> Any:
-    # Delay the heavyweight imports until OCR is requested. This also keeps the
-    # inexpensive text-layer check usable without loading OCR models.
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
-    from docling.document_converter import DocumentConverter, PdfFormatOption
-
-    pipeline_options = PdfPipelineOptions(
-        do_ocr=True,
-        ocr_options=EasyOcrOptions(lang=OCR_LANGUAGES, use_gpu=False),
-        do_table_structure=False,
-        do_picture_description=False,
-        generate_page_images=False,
-        generate_picture_images=False,
-    )
-    return DocumentConverter(
-        allowed_formats=[InputFormat.PDF],
-        format_options={
-            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-        },
+def _create_ocr_engine() -> Any:
+    # Delay importing RapidOCR and loading its models until OCR is requested.
+    # This keeps the inexpensive text-layer check usable on its own.
+    from rapidocr import (
+        EngineType,
+        LangCls,
+        LangDet,
+        LangRec,
+        ModelType,
+        OCRVersion,
+        RapidOCR,
     )
 
+    return RapidOCR(
+        params={
+            "Det.engine_type": EngineType.ONNXRUNTIME,
+            "Det.lang_type": LangDet.CH,
+            "Det.model_type": ModelType.SMALL,
+            "Det.ocr_version": OCRVersion.PPOCRV6,
+            "Cls.engine_type": EngineType.ONNXRUNTIME,
+            "Cls.lang_type": LangCls.CH,
+            "Cls.model_type": ModelType.MOBILE,
+            "Cls.ocr_version": OCRVersion.PPOCRV4,
+            "Rec.engine_type": EngineType.ONNXRUNTIME,
+            "Rec.lang_type": LangRec.CH,
+            "Rec.model_type": ModelType.SMALL,
+            "Rec.ocr_version": OCRVersion.PPOCRV6,
+        }
+    )
 
-def _export_to_markdown(document: Any) -> str:
-    from docling_core.types.doc import ImageRefMode
 
-    return document.export_to_markdown(image_mode=ImageRefMode.PLACEHOLDER)
+def _ocr_result_to_text(result: Any) -> str:
+    """Return detected text lines in RapidOCR's reading order."""
+    texts = getattr(result, "txts", None)
+    if not texts:
+        return ""
+    return "\n".join(text.strip() for text in texts if text.strip())
 
 
 def ocr_to_markdown(file_path: Path) -> str:
     if file_path.suffix.lower() != ".pdf":
         raise ValueError(f"OCR対象はPDFのみです: {file_path.suffix}")
 
-    converter = _create_ocr_converter()
-    result = converter.convert(file_path, page_range=(1, OCR_MAX_PAGES))
-    return _export_to_markdown(result.document)
+    engine = _create_ocr_engine()
+    pdf = pdfium.PdfDocument(str(file_path))
+    page_texts: list[str] = []
+    try:
+        for page_index in range(len(pdf)):
+            page = pdf[page_index]
+            try:
+                bitmap = page.render(scale=OCR_RENDER_SCALE)
+                try:
+                    result = engine(bitmap.to_numpy())
+                finally:
+                    bitmap.close()
+            finally:
+                page.close()
+
+            text = _ocr_result_to_text(result)
+            if text:
+                page_texts.append(text)
+    finally:
+        pdf.close()
+
+    # A blank line preserves page boundaries while remaining plain Markdown.
+    return "\n\n".join(page_texts)

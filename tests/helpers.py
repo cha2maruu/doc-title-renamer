@@ -4,69 +4,44 @@ import sys
 from types import ModuleType, SimpleNamespace
 
 
-class FakeOptions:
+class FakeMarkItDown:
     def __init__(self, **kwargs: object) -> None:
         self.kwargs = kwargs
 
 
-class FakeDocumentConverter:
-    def __init__(self, **kwargs: object) -> None:
-        self.kwargs = kwargs
+def install_fake_markitdown(monkeypatch: object) -> SimpleNamespace:
+    markitdown = ModuleType("markitdown")
+    markitdown.MarkItDown = FakeMarkItDown  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "markitdown", markitdown)  # type: ignore[attr-defined]
+
+    return SimpleNamespace(MarkItDown=FakeMarkItDown)
 
 
-class FakeInputFormat:
-    DOCX = "docx"
-    XLSX = "xlsx"
-    PPTX = "pptx"
-    PDF = "pdf"
+def install_fake_rapidocr(monkeypatch: object) -> SimpleNamespace:
+    rapidocr = ModuleType("rapidocr")
 
+    class FakeEnum:
+        ONNXRUNTIME = "onnxruntime"
+        CH = "ch"
+        SMALL = "small"
+        MOBILE = "mobile"
+        PPOCRV4 = "PP-OCRv4"
+        PPOCRV6 = "PP-OCRv6"
 
-class FakeImageRefMode:
-    PLACEHOLDER = object()
+    class FakeRapidOCR:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
 
+    rapidocr.EngineType = FakeEnum  # type: ignore[attr-defined]
+    rapidocr.LangCls = FakeEnum  # type: ignore[attr-defined]
+    rapidocr.LangDet = FakeEnum  # type: ignore[attr-defined]
+    rapidocr.LangRec = FakeEnum  # type: ignore[attr-defined]
+    rapidocr.ModelType = FakeEnum  # type: ignore[attr-defined]
+    rapidocr.OCRVersion = FakeEnum  # type: ignore[attr-defined]
+    rapidocr.RapidOCR = FakeRapidOCR  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "rapidocr", rapidocr)  # type: ignore[attr-defined]
 
-def install_fake_docling(monkeypatch: object) -> SimpleNamespace:
-    docling = ModuleType("docling")
-    docling.__path__ = []  # type: ignore[attr-defined]
-    datamodel = ModuleType("docling.datamodel")
-    datamodel.__path__ = []  # type: ignore[attr-defined]
-    base_models = ModuleType("docling.datamodel.base_models")
-    pipeline_options = ModuleType("docling.datamodel.pipeline_options")
-    document_converter = ModuleType("docling.document_converter")
-    docling_core = ModuleType("docling_core")
-    docling_core.__path__ = []  # type: ignore[attr-defined]
-    core_types = ModuleType("docling_core.types")
-    core_types.__path__ = []  # type: ignore[attr-defined]
-    core_doc = ModuleType("docling_core.types.doc")
-
-    base_models.InputFormat = FakeInputFormat  # type: ignore[attr-defined]
-    pipeline_options.EasyOcrOptions = FakeOptions  # type: ignore[attr-defined]
-    pipeline_options.PdfPipelineOptions = FakeOptions  # type: ignore[attr-defined]
-    document_converter.DocumentConverter = (  # type: ignore[attr-defined]
-        FakeDocumentConverter
-    )
-    document_converter.PdfFormatOption = FakeOptions  # type: ignore[attr-defined]
-    core_doc.ImageRefMode = FakeImageRefMode  # type: ignore[attr-defined]
-
-    modules = {
-        "docling": docling,
-        "docling.datamodel": datamodel,
-        "docling.datamodel.base_models": base_models,
-        "docling.datamodel.pipeline_options": pipeline_options,
-        "docling.document_converter": document_converter,
-        "docling_core": docling_core,
-        "docling_core.types": core_types,
-        "docling_core.types.doc": core_doc,
-    }
-    for name, module in modules.items():
-        monkeypatch.setitem(sys.modules, name, module)  # type: ignore[attr-defined]
-
-    return SimpleNamespace(
-        DocumentConverter=FakeDocumentConverter,
-        ImageRefMode=FakeImageRefMode,
-        InputFormat=FakeInputFormat,
-        Options=FakeOptions,
-    )
+    return SimpleNamespace(Enum=FakeEnum, RapidOCR=FakeRapidOCR)
 
 
 def build_minimal_pdf(page_texts: list[str | None]) -> bytes:
