@@ -111,6 +111,16 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     limitation: it cannot fully distinguish mixed cases such as "an
     image-only cover page with text in the body." Speed and implementation
     simplicity are prioritized over accuracy.
+- **`--force-ocr` option**: a CLI flag that skips the text-layer detection
+  above entirely and always routes **PDF** targets to OCR, regardless of
+  what MarkItDown-based extraction would have found. This is an escape
+  hatch for the known limitation just above — e.g. a PDF whose embedded
+  text layer exists but is garbled, wrong, or otherwise unhelpful for title
+  inference (which the automatic heuristic cannot detect on its own).
+  - It has no effect on `.docx` / `.xlsx` / `.pptx` files, since OCR is not
+    part of their extraction path.
+  - It is unrelated to and independent of `--yes`/`--llm-*`; it can be
+    combined with either subcommand (`rename-only` / `organize`).
 
 ### 4.5 Markdown cleaning
 
@@ -480,6 +490,7 @@ entirely.")
 - Subcommand: `rename-only` or `organize` (exactly one, see 4.2)
 - `--llm-url` / `--llm-model` / `--llm-timeout` (optional, see 4.11)
 - `--yes` (skips the confirmation prompt, see 4.10)
+- `--force-ocr` (always OCR PDFs, skipping text-layer detection, see 4.4)
 
 ### Output
 
@@ -500,8 +511,9 @@ entirely.")
 4. For each file (skip this file and continue on any per-file error, see
    4.14; print a `[i/N] filename を解析中...` progress line before
    starting each file, see 4.13):
-   a. For a PDF, determine text-layer presence from all pages' extracted
-      text.
+   a. For a PDF, if `--force-ocr` is given, skip text-layer detection and
+      extract via RapidOCR. Otherwise, determine text-layer presence from
+      all pages' extracted text.
       - Present: extract via MarkItDown.
       - Absent: extract via RapidOCR (language: Japanese), all pages.
    b. For docx/xlsx/pptx, extract via MarkItDown.
