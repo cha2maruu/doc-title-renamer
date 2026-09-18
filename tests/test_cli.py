@@ -64,6 +64,91 @@ def test_run_yes_executes_complete_pipeline(monkeypatch, tmp_path: Path, capsys)
     assert "変更予定:" in captured.out
     assert "実行結果:" in captured.out
     assert "test-model" in captured.out
+    assert "[1/1] document.pdf を解析中..." in captured.out
+
+
+def test_run_prints_preview_and_results_as_two_column_tables(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "document.pdf"
+    source.touch()
+    args = cli.build_parser().parse_args(["rename-only", str(tmp_path), "--yes"])
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    assert "使用モデル: test-model" in captured.out
+    preview_table = captured.out.split("変更予定:")[1].split("実行結果:")[0]
+    assert "元ファイル名" in preview_table
+    assert "変更ファイル名" in preview_table
+    assert "document.pdf" in preview_table
+    assert "20260415_見積書.pdf" in preview_table
+    # 移動先(親フォルダの絶対パス)や判定日付・タイトル・モデル名は表に出さない
+    assert str(tmp_path) not in preview_table
+    assert "2026-04-15" not in preview_table
+    assert "判定日付" not in preview_table
+    assert "モデル" not in preview_table
+
+    results_table = captured.out.split("実行結果:")[1]
+    assert "元ファイル名" in results_table
+    assert "変更ファイル名" in results_table
+    assert "結果" in results_table
+    assert "成功" in results_table
+
+
+def test_run_organize_preview_omits_destination_folder(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "document.docx"
+    source.touch()
+    args = cli.build_parser().parse_args(["organize", str(tmp_path), "--yes"])
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    preview_table = captured.out.split("変更予定:")[1].split("実行結果:")[0]
+    assert "20260415_見積書.docx" in preview_table
+    # organizeモードでも移動先の YYYYMM フォルダへのパスは表に出さない
+    # (新ファイル名自体には日付が含まれるため "202604" の部分一致では判定できない)
+    assert str(tmp_path / "202604") not in preview_table
+
+
+def test_run_prints_progress_for_each_file_in_order(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    first = tmp_path / "a.pdf"
+    second = tmp_path / "b.pdf"
+    first.touch()
+    second.touch()
+    args = cli.build_parser().parse_args(["rename-only", str(tmp_path), "--yes"])
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    progress_index_a = captured.out.index("[1/2] a.pdf を解析中...")
+    progress_index_b = captured.out.index("[2/2] b.pdf を解析中...")
+    assert progress_index_a < progress_index_b
 
 
 def test_run_uses_ocr_for_scanned_pdf(monkeypatch, tmp_path: Path) -> None:
