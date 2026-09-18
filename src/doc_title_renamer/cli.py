@@ -94,6 +94,15 @@ def _add_common_arguments(subparser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="確認プロンプトを省略し、変更前後の一覧を表示したうえで自動的に実行する",
     )
+    subparser.add_argument(
+        "--force-ocr",
+        action="store_true",
+        help=(
+            "PDFのテキストレイヤー有無の自動判定を無視し、常にOCR（RapidOCR）で"
+            "抽出する。テキストレイヤーはあるが内容が壊れている/意図と異なる"
+            "PDFへの対処用（docx/xlsx/pptxには影響しない）"
+        ),
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,8 +132,8 @@ def _created_date(path: Path) -> datetime.date:
     return datetime.datetime.fromtimestamp(path.stat().st_ctime).date()
 
 
-def _extract_markdown(path: Path) -> str:
-    if path.suffix.lower() == ".pdf" and not ocr.has_text_layer(path):
+def _extract_markdown(path: Path, force_ocr: bool = False) -> str:
+    if path.suffix.lower() == ".pdf" and (force_ocr or not ocr.has_text_layer(path)):
         return ocr.ocr_to_markdown(path)
     return converter.convert_to_markdown(path)
 
@@ -284,7 +293,7 @@ def run(args: argparse.Namespace) -> int:
         issue_date: datetime.date | None = None
         title: str | None = None
         try:
-            markdown = _extract_markdown(source)
+            markdown = _extract_markdown(source, args.force_ocr)
             cleaned_markdown = md_cleaner.clean_markdown(markdown)
             guess = llm_client.guess_title_and_date(
                 cleaned_markdown, args.llm_url, model, timeout=args.llm_timeout

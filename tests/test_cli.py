@@ -172,6 +172,58 @@ def test_run_uses_ocr_for_scanned_pdf(monkeypatch, tmp_path: Path) -> None:
     assert cli.run(args) == cli.EXIT_OK
 
 
+def test_run_force_ocr_uses_ocr_even_with_text_layer(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "document.pdf"
+    source.touch()
+    args = cli.build_parser().parse_args(
+        ["rename-only", str(source), "--yes", "--force-ocr"]
+    )
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.ocr,
+        "has_text_layer",
+        lambda path: (_ for _ in ()).throw(AssertionError("has_text_layer called")),
+    )
+    monkeypatch.setattr(cli.ocr, "ocr_to_markdown", lambda path: "ocr markdown")
+    monkeypatch.setattr(
+        cli.converter,
+        "convert_to_markdown",
+        lambda path: (_ for _ in ()).throw(AssertionError("converter called")),
+    )
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    assert cli.run(args) == cli.EXIT_OK
+
+
+def test_run_force_ocr_does_not_affect_non_pdf_files(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "document.docx"
+    source.touch()
+    args = cli.build_parser().parse_args(
+        ["rename-only", str(source), "--yes", "--force-ocr"]
+    )
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.ocr,
+        "ocr_to_markdown",
+        lambda path: (_ for _ in ()).throw(AssertionError("ocr called")),
+    )
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    assert cli.run(args) == cli.EXIT_OK
+
+
 def test_run_n_does_not_apply_plan(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "document.pdf"
     source.touch()

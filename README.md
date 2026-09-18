@@ -40,6 +40,7 @@ uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer 
 | `--llm-model` | 未指定（自動解決） | 使用するモデル名。省略時はローカルLLMのロード済みモデルから自動解決する |
 | `--llm-timeout` | `120`（秒） | ローカルLLMへの1回あたりの問い合わせタイムアウト秒数 |
 | `--yes` | 無効 | 確認プロンプトを省略し、自動的に実行する |
+| `--force-ocr` | 無効 | PDFのテキストレイヤー自動判定を無視し、常にOCR（RapidOCR）で抽出する。docx/xlsx/pptxには影響しない |
 
 ```bash
 # Ollama等、LM Studio以外のローカルLLMを使う場合の例
@@ -52,6 +53,9 @@ uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer 
 
 # タスクスケジューラ等からの自動実行向け: 確認プロンプトを省略
 uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer organize "C:\path\to\folder" --yes
+
+# テキストレイヤーはあるが内容が壊れている/意図と異なるPDF向け: 常にOCRで抽出
+uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer rename-only "C:\path\to\file.pdf" --force-ocr
 ```
 
 ## ファイル名 / フォルダ命名規則
