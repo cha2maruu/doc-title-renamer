@@ -102,6 +102,17 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     reevaluated against RapidOCR's (PP-OCRv6 small model) actual speed and
     dropped as unnecessary — all pages are rendered to images (via
     `pypdfium2`, already used for text-layer detection) and OCR'd.
+  - RapidOCR's own logger defaults to `info` and prints one line per
+    Det/Cls/Rec engine at construction time (e.g. `Using engine_name: ...`,
+    `Using <model path>`). This is third-party startup noise on top of this
+    tool's own progress/table output (4.13), so this tool sets
+    `Global.log_level` to `"warning"` via RapidOCR's own `params` config
+    dict when constructing the engine (`RapidOCR.__init__` re-applies
+    `Global.log_level` to its logger internally on every construction, so
+    calling `logging.getLogger("RapidOCR").setLevel(...)` beforehand would
+    just get overwritten — the `params` dict is the only setting that
+    sticks). Actual warnings/errors from RapidOCR (e.g. execution-provider
+    fallback) remain visible.
 - **How the presence of a text layer is determined**: ordinary text
   extraction is attempted on **all of the PDF's pages** (matching the OCR
   scope), and if the total number of extracted characters (excluding

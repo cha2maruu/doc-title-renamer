@@ -48,6 +48,15 @@ def _create_ocr_engine() -> Any:
 
     return RapidOCR(
         params={
+            # RapidOCR's own logger defaults to "info" and prints one
+            # "[INFO] Using engine_name: ..." / "Using <model path>" line per
+            # Det/Cls/Rec engine at construction time. That's noise on top of
+            # this tool's own progress output, so it's raised to "warning"
+            # via RapidOCR's own config key (setting the logger directly
+            # from here wouldn't stick: RapidOCR.__init__ always re-applies
+            # Global.log_level to its logger *after* construction starts).
+            # Actual warnings/errors from RapidOCR remain visible.
+            "Global.log_level": "warning",
             "Det.engine_type": EngineType.ONNXRUNTIME,
             "Det.lang_type": LangDet.CH,
             "Det.model_type": ModelType.SMALL,

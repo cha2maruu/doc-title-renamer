@@ -53,6 +53,7 @@ def test_create_ocr_engine_uses_ppocrv6_small_with_onnxruntime(monkeypatch) -> N
 
         assert isinstance(engine, fake.RapidOCR)
         assert engine.kwargs["params"] == {
+            "Global.log_level": "warning",
             "Det.engine_type": fake.Enum.ONNXRUNTIME,
             "Det.lang_type": fake.Enum.CH,
             "Det.model_type": fake.Enum.SMALL,
