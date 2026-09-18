@@ -157,7 +157,9 @@ def test_run_uses_ocr_for_scanned_pdf(monkeypatch, tmp_path: Path) -> None:
     args = cli.build_parser().parse_args(["rename-only", str(source), "--yes"])
     _configure_success(monkeypatch)
     monkeypatch.setattr(cli.ocr, "has_text_layer", lambda path: False)
-    monkeypatch.setattr(cli.ocr, "ocr_to_markdown", lambda path: "ocr markdown")
+    monkeypatch.setattr(
+        cli.ocr, "ocr_to_markdown", lambda path, on_page=None: "ocr markdown"
+    )
     monkeypatch.setattr(
         cli.converter,
         "convert_to_markdown",
@@ -186,7 +188,9 @@ def test_run_force_ocr_uses_ocr_even_with_text_layer(
         "has_text_layer",
         lambda path: (_ for _ in ()).throw(AssertionError("has_text_layer called")),
     )
-    monkeypatch.setattr(cli.ocr, "ocr_to_markdown", lambda path: "ocr markdown")
+    monkeypatch.setattr(
+        cli.ocr, "ocr_to_markdown", lambda path, on_page=None: "ocr markdown"
+    )
     monkeypatch.setattr(
         cli.converter,
         "convert_to_markdown",
@@ -213,7 +217,7 @@ def test_run_force_ocr_does_not_affect_non_pdf_files(
     monkeypatch.setattr(
         cli.ocr,
         "ocr_to_markdown",
-        lambda path: (_ for _ in ()).throw(AssertionError("ocr called")),
+        lambda path, on_page=None: (_ for _ in ()).throw(AssertionError("ocr called")),
     )
     monkeypatch.setattr(
         cli.renamer,
@@ -222,6 +226,120 @@ def test_run_force_ocr_does_not_affect_non_pdf_files(
     )
 
     assert cli.run(args) == cli.EXIT_OK
+
+
+def test_run_prints_extraction_and_llm_stage_messages(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "document.docx"
+    source.touch()
+    args = cli.build_parser().parse_args(["rename-only", str(source), "--yes"])
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    assert "→ MarkItDownで抽出中..." in captured.out
+    assert "→ LLMへ問い合わせ中..." in captured.out
+
+
+def test_run_prints_text_layer_present_stage_message(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "document.pdf"
+    source.touch()
+    args = cli.build_parser().parse_args(["rename-only", str(source), "--yes"])
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    assert "→ テキストレイヤーあり: MarkItDownで抽出中..." in captured.out
+
+
+def test_run_prints_ocr_page_progress_every_n_pages_and_final_page(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "scan.pdf"
+    source.touch()
+    args = cli.build_parser().parse_args(["rename-only", str(source), "--yes"])
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(cli.ocr, "has_text_layer", lambda path: False)
+
+    def fake_ocr_to_markdown(path, on_page=None):
+        total = 12
+        if on_page:
+            on_page(0, total)
+            for page in range(1, total + 1):
+                on_page(page, total)
+        return "ocr markdown"
+
+    monkeypatch.setattr(cli.ocr, "ocr_to_markdown", fake_ocr_to_markdown)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    assert "→ OCR実行中（テキストレイヤーなし、全12ページ）" in captured.out
+    assert cli.OCR_PROGRESS_PAGE_INTERVAL == 5
+    assert "- 5/12ページ完了" in captured.out
+    assert "- 10/12ページ完了" in captured.out
+    assert "- 12/12ページ完了" in captured.out
+    # 節目でも最終ページでもないページ完了は出力しない
+    assert "- 1/12ページ完了" not in captured.out
+    assert "- 11/12ページ完了" not in captured.out
+
+
+def test_run_force_ocr_progress_message_mentions_force_ocr(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    source = tmp_path / "document.pdf"
+    source.touch()
+    args = cli.build_parser().parse_args(
+        ["rename-only", str(source), "--yes", "--force-ocr"]
+    )
+    _configure_success(monkeypatch)
+    monkeypatch.setattr(
+        cli.ocr,
+        "has_text_layer",
+        lambda path: (_ for _ in ()).throw(AssertionError("has_text_layer called")),
+    )
+
+    def fake_ocr_to_markdown(path, on_page=None):
+        if on_page:
+            on_page(0, 1)
+            on_page(1, 1)
+        return "ocr markdown"
+
+    monkeypatch.setattr(cli.ocr, "ocr_to_markdown", fake_ocr_to_markdown)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    exit_code = cli.run(args)
+
+    captured = capsys.readouterr()
+    assert exit_code == cli.EXIT_OK
+    assert "→ OCR実行中（--force-ocr指定、全1ページ）" in captured.out
 
 
 def test_run_n_does_not_apply_plan(monkeypatch, tmp_path: Path) -> None:

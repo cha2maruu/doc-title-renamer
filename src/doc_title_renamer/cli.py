@@ -6,6 +6,7 @@ import sys
 import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlparse
 
 from doc_title_renamer import (
@@ -25,6 +26,8 @@ EXIT_OK = 0
 EXIT_PARTIAL_FAILURE = 1
 EXIT_ABORTED = 2
 EXIT_INVALID_ARGS = 64
+
+OCR_PROGRESS_PAGE_INTERVAL = 5
 
 
 class ArgumentError(Exception):
@@ -132,9 +135,28 @@ def _created_date(path: Path) -> datetime.date:
     return datetime.datetime.fromtimestamp(path.stat().st_ctime).date()
 
 
+def _make_ocr_page_progress_printer(reason: str) -> Callable[[int, int], None]:
+    def on_page(page: int, total: int) -> None:
+        if page == 0:
+            print(f"  → OCR実行中（{reason}、全{total}ページ）", flush=True)
+            return
+        if page == total or page % OCR_PROGRESS_PAGE_INTERVAL == 0:
+            print(f"    - {page}/{total}ページ完了", flush=True)
+
+    return on_page
+
+
 def _extract_markdown(path: Path, force_ocr: bool = False) -> str:
-    if path.suffix.lower() == ".pdf" and (force_ocr or not ocr.has_text_layer(path)):
-        return ocr.ocr_to_markdown(path)
+    if path.suffix.lower() == ".pdf":
+        if force_ocr:
+            on_page = _make_ocr_page_progress_printer("--force-ocr指定")
+            return ocr.ocr_to_markdown(path, on_page=on_page)
+        if not ocr.has_text_layer(path):
+            on_page = _make_ocr_page_progress_printer("テキストレイヤーなし")
+            return ocr.ocr_to_markdown(path, on_page=on_page)
+        print("  → テキストレイヤーあり: MarkItDownで抽出中...", flush=True)
+        return converter.convert_to_markdown(path)
+    print("  → MarkItDownで抽出中...", flush=True)
     return converter.convert_to_markdown(path)
 
 
@@ -295,6 +317,7 @@ def run(args: argparse.Namespace) -> int:
         try:
             markdown = _extract_markdown(source, args.force_ocr)
             cleaned_markdown = md_cleaner.clean_markdown(markdown)
+            print("  → LLMへ問い合わせ中...", flush=True)
             guess = llm_client.guess_title_and_date(
                 cleaned_markdown, args.llm_url, model, timeout=args.llm_timeout
             )

@@ -432,6 +432,33 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     progress bar or percentage — keeping it a plain `print` avoids adding a
     UI/terminal-rendering dependency (see the dependency-minimalism
     guidance in `CLAUDE.md`).
+- **Sub-steps within a file**: below the `[i/N] filename を解析中...` line,
+  the tool prints a few more one-line, indented (`  → ...`) progress
+  messages for the slower sub-steps of processing that one file, so a long
+  run never goes silent for more than a few seconds:
+  - **Extraction method**: right before extraction starts, which path was
+    taken — `テキストレイヤーあり: MarkItDownで抽出中...` /
+    `テキストレイヤーなし: OCR実行中（全N ページ）` /
+    `--force-ocr指定: OCR実行中（全Nページ）` (4.4/`--force-ocr`) for PDFs,
+    or plainly `MarkItDownで抽出中...` for `.docx`/`.xlsx`/`.pptx`.
+  - **OCR page progress**: since OCR (4.4) can take from seconds to tens of
+    seconds *per page* and a scanned PDF may have many pages, the tool
+    prints one further-indented line (`    - p/N ページ完了`) every
+    `OCR_PROGRESS_PAGE_INTERVAL` (5) completed pages, and always for the
+    final page (so a page count that isn't a multiple of 5 still ends with
+    a visible completion line). Reporting every single page was considered
+    too noisy for many-page scans; this module-level constant in `cli.py`
+    is the single place that interval is tuned.
+    - Mechanically, `ocr.ocr_to_markdown` takes an optional `on_page(page,
+      total)` callback: it is called once with `(0, total)` right before
+      OCR starts (so the total page count in the message above is known up
+      front) and again after each page with `(page, total)`, 1-indexed.
+      `ocr.py` itself has no printing/formatting logic — the interval
+      policy and message wording live entirely in `cli.py`'s callback, so
+      the OCR module stays a plain, presentation-agnostic library function.
+  - **LLM query**: right before the local-LLM call in 4.6 (which can take
+    up to `--llm-timeout` seconds), the tool prints
+    `LLMへ問い合わせ中...`.
 
 ### 4.14 Behavior on per-file processing errors
 
@@ -521,12 +548,14 @@ entirely.")
    error on failure); print the resolved model name once (see 4.6).
 4. For each file (skip this file and continue on any per-file error, see
    4.14; print a `[i/N] filename を解析中...` progress line before
-   starting each file, see 4.13):
+   starting each file, and further sub-step progress lines throughout
+   a–c below, see 4.13):
    a. For a PDF, if `--force-ocr` is given, skip text-layer detection and
       extract via RapidOCR. Otherwise, determine text-layer presence from
       all pages' extracted text.
       - Present: extract via MarkItDown.
-      - Absent: extract via RapidOCR (language: Japanese), all pages.
+      - Absent: extract via RapidOCR (language: Japanese), all pages,
+        reporting page-level progress as OCR proceeds.
    b. For docx/xlsx/pptx, extract via MarkItDown.
    c. Clean the extracted Markdown (whitespace compaction, CJK spacing
       fixes, Unicode normalization, noise-line removal, etc.), then send
