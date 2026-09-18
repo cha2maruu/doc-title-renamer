@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pypdfium2 as pdfium
 
@@ -81,7 +81,17 @@ def _ocr_result_to_text(result: Any) -> str:
     return "\n".join(text.strip() for text in texts if text.strip())
 
 
-def ocr_to_markdown(file_path: Path) -> str:
+def ocr_to_markdown(
+    file_path: Path, on_page: Callable[[int, int], None] | None = None
+) -> str:
+    """Run OCR over every page of ``file_path`` and return assembled Markdown.
+
+    ``on_page``, if given, is called once with ``(0, total_pages)`` before
+    OCR starts, and again after each page finishes with
+    ``(page_number, total_pages)`` (1-indexed), so callers can report
+    progress on long-running scans without this module knowing anything
+    about how that progress should be displayed.
+    """
     if file_path.suffix.lower() != ".pdf":
         raise ValueError(f"OCR対象はPDFのみです: {file_path.suffix}")
 
@@ -89,7 +99,10 @@ def ocr_to_markdown(file_path: Path) -> str:
     pdf = pdfium.PdfDocument(str(file_path))
     page_texts: list[str] = []
     try:
-        for page_index in range(len(pdf)):
+        total_pages = len(pdf)
+        if on_page:
+            on_page(0, total_pages)
+        for page_index in range(total_pages):
             page = pdf[page_index]
             try:
                 bitmap = page.render(scale=OCR_RENDER_SCALE)
@@ -103,6 +116,8 @@ def ocr_to_markdown(file_path: Path) -> str:
             text = _ocr_result_to_text(result)
             if text:
                 page_texts.append(text)
+            if on_page:
+                on_page(page_index + 1, total_pages)
     finally:
         pdf.close()
 

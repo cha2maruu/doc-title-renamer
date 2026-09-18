@@ -106,3 +106,26 @@ def test_ocr_to_markdown_processes_all_pages(monkeypatch, tmp_path: Path) -> Non
 def test_ocr_to_markdown_rejects_non_pdf(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="OCR対象はPDFのみ"):
         ocr.ocr_to_markdown(tmp_path / "document.docx")
+
+
+def test_ocr_to_markdown_reports_progress_per_page(
+    monkeypatch, tmp_path: Path
+) -> None:
+    file_path = tmp_path / "scan.pdf"
+    write_pdf(file_path, [None, None, None])
+    results = iter(
+        [
+            SimpleNamespace(txts=("1ページ目",)),
+            SimpleNamespace(txts=("2ページ目",)),
+            SimpleNamespace(txts=("3ページ目",)),
+        ]
+    )
+    monkeypatch.setattr(
+        ocr, "_create_ocr_engine", lambda: (lambda image: next(results))
+    )
+    calls: list[tuple[int, int]] = []
+
+    ocr.ocr_to_markdown(file_path, on_page=lambda page, total: calls.append((page, total)))
+
+    # 開始通知(0, 総ページ数)に続き、各ページ完了ごとに(ページ番号, 総ページ数)を通知する
+    assert calls == [(0, 3), (1, 3), (2, 3), (3, 3)]
