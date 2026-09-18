@@ -189,8 +189,10 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     of the current date) → treated as an issue-date-inference failure,
     falling back to the creation date.
 - For reproducibility, `temperature` is set to `0` by default for LLM
-  requests (the model's default if unsupported). The model name used is
-  shown in the confirmation list and logs.
+  requests (the model's default if unsupported). The resolved model name is
+  printed once, as `使用モデル: <model>`, right after the pre-flight
+  connection check succeeds and before per-file processing begins (see
+  4.13); it is not repeated as a column in the per-file tables in 4.10/4.13.
 
 ### 4.6.1 Prompt-injection countermeasures
 
@@ -308,11 +310,18 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
 ### 4.10 Confirmation before execution
 
 - No dedicated dry-run mode is provided. Instead, **before** actually
-  renaming/moving anything, the tool prints a list of "old filename → new
-  filename (and destination)" for every target file, and asks the user to
-  confirm with a **y/n prompt**.
+  renaming/moving anything, the tool prints a two-column table — "元ファ
+  イル名" (original filename) / "変更ファイル名" (new filename) — for
+  every target file, and asks the user to confirm with a **y/n prompt**.
+  - The table intentionally omits the destination folder, the inferred
+    issue date, the title, and the model name as separate columns: the
+    date and title are already visible in the new filename itself, and
+    the destination folder (plain rename vs. the `YYYYMM` folder in
+    `organize` mode) is not shown at all, in either mode — this keeps the
+    table small enough to scan at a glance. The resolved model name is
+    printed once, separately, before this table (see 4.6/4.13).
   - Only if `y` (proceed) is entered does the tool perform the
-    renames/moves in bulk, exactly as shown in the list.
+    renames/moves in bulk, exactly as shown in the table.
   - If `n` (do not proceed) is entered, nothing is changed and the tool
     exits.
   - `y`/`n` are accepted case-insensitively. An empty input or anything
@@ -321,7 +330,7 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     safely defaults to "do not proceed" and exits.
 - A `--yes` option is provided for **non-interactive execution** (e.g. from
   Task Scheduler). When specified, the confirmation prompt is skipped; the
-  list is still printed as a log, and execution proceeds automatically.
+  table is still printed as a log, and execution proceeds automatically.
 - There is no per-file confirmation — the entire batch of target files is
   confirmed together, once.
 - The state of target files may change between the confirmation (listing +
@@ -376,13 +385,32 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
     continue using only the creation date when the LLM is unreachable (to
     avoid producing incorrect or incomplete results).
 
-### 4.13 Logging
+### 4.13 Logging and progress display
 
-- In addition to the confirmation list from 4.10, the tool prints a summary
-  of results after execution (files that succeeded/failed, the resolved
-  date, the title used, and the LLM model name used) to standard output.
+- In addition to the confirmation table from 4.10, the tool prints a
+  results table after execution, to standard output, with three columns:
+  "元ファイル名" (original filename) / "変更ファイル名" (new filename) /
+  "結果" (result: success, success-no-op, or failure with its error
+  message). As with the confirmation table in 4.10, the destination
+  folder, resolved date, title, and model name are not repeated here as
+  separate columns — the resolved model name was already printed once
+  before per-file processing began (see 4.6).
 - Saving logs to a file is not currently implemented (can be added later
   if needed).
+- **Per-file progress display**: while building the confirmation list (the
+  loop in 4.4–4.6 that extracts content, optionally runs OCR, and queries
+  the local LLM for each target file), the tool prints a one-line progress
+  message (e.g. `[2/5] invoice.pdf を解析中...`) to standard output
+  **immediately before** starting to process each file, and flushes the
+  stream right away.
+  - Rationale: OCR and local-LLM inference can each take on the order of
+    seconds to tens of seconds per file, and with no output during this
+    phase the tool would otherwise appear to hang for the whole batch.
+  - The index/total counters reflect the fixed, stable order from 4.3.
+  - This is a lightweight, single-line-per-file indicator, not a redrawn
+    progress bar or percentage — keeping it a plain `print` avoids adding a
+    UI/terminal-rendering dependency (see the dependency-minimalism
+    guidance in `CLAUDE.md`).
 
 ### 4.14 Behavior on per-file processing errors
 
@@ -456,7 +484,8 @@ entirely.")
 ### Output
 
 - The renamed (and, if applicable, moved) files
-- A processing log (old/new filenames, resolved date, mode, etc.)
+- A processing log (old/new filename tables, per-file progress, resolved
+  model name, success/failure, etc.)
 
 ## 7. Processing Flow (overview)
 
@@ -467,9 +496,10 @@ entirely.")
    If there are zero targets, print "no target files found" and exit
    normally.
 3. Verify the local LLM connection and resolve the model (abort with an
-   error on failure).
+   error on failure); print the resolved model name once (see 4.6).
 4. For each file (skip this file and continue on any per-file error, see
-   4.14):
+   4.14; print a `[i/N] filename を解析中...` progress line before
+   starting each file, see 4.13):
    a. For a PDF, determine text-layer presence from all pages' extracted
       text.
       - Present: extract via MarkItDown.
@@ -488,15 +518,15 @@ entirely.")
       length, validate path length).
    g. Resolve name collisions (existing file / within-batch / no-op) and
       decide whether a numeric suffix is needed.
-5. Print the full "before → after" list for all files; auto-proceed if
-   `--yes` was given, otherwise ask for y/n confirmation.
+5. Print the original-filename/new-filename table for all files; auto-
+   proceed if `--yes` was given, otherwise ask for y/n confirmation.
 6. Immediately before execution, re-check each file's state, then perform
    either the rename only, or the rename plus move into a YYYYMM folder,
    depending on the mode.
    - If an operation fails (e.g. a file lock), skip only that file and
      continue with the rest.
-7. Print the results (success/failure, resolved date, title, model used)
-   and return the exit code (see 4.15).
+7. Print the results table (original filename / new filename / success or
+   failure) and return the exit code (see 4.15).
 ```
 
 ## 8. Constraints

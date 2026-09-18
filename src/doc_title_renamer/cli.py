@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import sys
+import unicodedata
 from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlparse
@@ -178,14 +179,37 @@ def _resolve_plans(
     return [], failures
 
 
+def _display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in text)
+
+
+def _pad_cell(text: str, width: int) -> str:
+    return text + " " * (width - _display_width(text))
+
+
+def _render_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    widths = [
+        max(_display_width(cell) for cell in [header, *(row[i] for row in rows)])
+        for i, header in enumerate(headers)
+    ]
+    border = "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+
+    def format_row(cells: list[str]) -> str:
+        return (
+            "|" + "|".join(f" {_pad_cell(cell, w)} " for cell, w in zip(cells, widths)) + "|"
+        )
+
+    lines = [border, format_row(headers), border]
+    lines.extend(format_row(row) for row in rows)
+    lines.append(border)
+    return lines
+
+
 def _print_preview(planned_files: list[PlannedFile]) -> None:
     print("変更予定:")
-    for item in planned_files:
-        print(
-            f"  {item.source.name} -> {item.destination.name} "
-            f"(移動先: {item.destination.parent}, 判定日付: {item.issue_date:%Y-%m-%d}, "
-            f"タイトル: {item.title}, モデル: {item.model})"
-        )
+    rows = [[item.source.name, item.destination.name] for item in planned_files]
+    for line in _render_table(["元ファイル名", "変更ファイル名"], rows):
+        print(line)
 
 
 def _confirm() -> bool:
@@ -211,29 +235,20 @@ def _file_state(path: Path) -> tuple[int, int, int]:
 
 
 def _print_results(
-    planned_files: list[PlannedFile],
     rename_results: list[renamer.RenameResult],
     failures: list[FailedFile],
 ) -> None:
-    metadata = {item.source: item for item in planned_files}
     print("実行結果:")
+    rows: list[list[str]] = []
     for result in rename_results:
-        item = metadata[result.source]
         status = "成功（変更不要）" if result.no_op else "成功"
         if not result.success:
             status = f"失敗: {result.error}"
-        print(
-            f"  [{status}] {result.source.name} -> {result.destination} "
-            f"(判定日付: {item.issue_date:%Y-%m-%d}, タイトル: {item.title}, "
-            f"モデル: {item.model})"
-        )
+        rows.append([result.source.name, result.destination.name, status])
     for failure in failures:
-        issue_date = failure.issue_date.isoformat() if failure.issue_date else "-"
-        print(
-            f"  [失敗: {failure.error}] {failure.source.name} "
-            f"(判定日付: {issue_date}, タイトル: {failure.title or '-'}, "
-            f"モデル: {failure.model or '-'})"
-        )
+        rows.append([failure.source.name, "-", f"失敗: {failure.error}"])
+    for line in _render_table(["元ファイル名", "変更ファイル名", "結果"], rows):
+        print(line)
 
 
 def run(args: argparse.Namespace) -> int:
@@ -259,9 +274,13 @@ def run(args: argparse.Namespace) -> int:
         print(f"ローカルLLMの事前確認に失敗しました: {exc}", file=sys.stderr)
         return EXIT_ABORTED
 
+    print(f"使用モデル: {model}")
+
     planned_files: list[PlannedFile] = []
     failures: list[FailedFile] = []
-    for source in targets:
+    total = len(targets)
+    for index, source in enumerate(targets, start=1):
+        print(f"[{index}/{total}] {source.name} を解析中...", flush=True)
         issue_date: datetime.date | None = None
         title: str | None = None
         try:
@@ -292,7 +311,7 @@ def run(args: argparse.Namespace) -> int:
     planned_files, collision_failures = _resolve_plans(planned_files)
     failures.extend(collision_failures)
     if not planned_files:
-        _print_results([], [], failures)
+        _print_results([], failures)
         return EXIT_PARTIAL_FAILURE if failures else EXIT_OK
 
     snapshots: dict[Path, tuple[int, int, int]] = {}
@@ -311,7 +330,7 @@ def run(args: argparse.Namespace) -> int:
     planned_files = ready_files
 
     if not planned_files:
-        _print_results([], [], failures)
+        _print_results([], failures)
         return EXIT_PARTIAL_FAILURE
 
     _print_preview(planned_files)
@@ -338,7 +357,7 @@ def run(args: argparse.Namespace) -> int:
     rename_results = renamer.apply_plan(
         [(item.source, item.destination) for item in executable]
     )
-    _print_results(planned_files, rename_results, failures)
+    _print_results(rename_results, failures)
     if failures or any(not result.success for result in rename_results):
         return EXIT_PARTIAL_FAILURE
     return EXIT_OK
