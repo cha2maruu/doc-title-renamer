@@ -40,7 +40,7 @@ each file, reducing the effort of file management.
 | Organize mode | Mode that changes filenames and also moves files into a `YYYYMM` folder |
 | Issue date | The date the document states it was issued/created, as written inside the document |
 | Creation date | The file's creation timestamp on the filesystem (metadata) |
-| Japanese era date (wareki) | A year expressed using a Japanese era name (Reiwa, Heisei, Showa, etc.) |
+| Japanese era date (wareki) | A year expressed using a Japanese era name (Reiwa, Heisei, Showa, etc.), including its single-letter romanized abbreviation (R, H, S, T, M) |
 | Local LLM | Any locally-running LLM server that exposes an OpenAI-compatible chat completions API (`/v1/chat/completions`) and models-list API (`/v1/models`) — e.g. LM Studio, Ollama. This tool is implemented against this API shape and does not depend on any product-specific feature |
 
 ## 4. Functional Requirements
@@ -187,7 +187,9 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
 - If a date in the document is expressed as a **Japanese era date** (Reiwa,
   Heisei, Showa, etc.), it is **converted to the Gregorian calendar before
   being passed to the LLM** (this conversion is done in code, to avoid the
-  LLM misconverting it).
+  LLM misconverting it). This also covers the single-letter romanized era
+  abbreviations (`R`/`H`/`S`/`T`/`M`, e.g. `R6年4月1日`) in both the kanji
+  form (`R6年`) and the delimited numeric form (`R6.4.1`, `H31/4/1`).
 - If the issue date cannot be read from the document, the **file's creation
   timestamp** is used instead.
 - To reduce parsing failures, the LLM is queried with a prompt that requests

@@ -20,6 +20,30 @@ def test_normalize_japanese_era_leaves_other_text_unchanged() -> None:
     )
 
 
+def test_normalize_japanese_era_supports_alpha_kanji_notation() -> None:
+    text = "M元年、T2年、S64年、H元年、R6年4月1日"
+
+    assert normalize_japanese_era(text) == (
+        "1868年、1913年、1989年、1989年、2024年4月1日"
+    )
+
+
+def test_normalize_japanese_era_supports_alpha_delimited_notation() -> None:
+    assert normalize_japanese_era("R6.4.1") == "2024.4.1"
+    assert normalize_japanese_era("H31/4/1") == "2019/4/1"
+    assert normalize_japanese_era("R元/5/1") == "2019/5/1"
+
+
+def test_normalize_japanese_era_rejects_invalid_alpha_notation() -> None:
+    assert normalize_japanese_era("R0年は不正。") == "R0年は不正。"
+    assert normalize_japanese_era("R0.4.1は不正。") == "R0.4.1は不正。"
+
+
+def test_normalize_japanese_era_ignores_alpha_letter_preceded_by_alnum() -> None:
+    assert normalize_japanese_era("XR6年") == "XR6年"
+    assert normalize_japanese_era("1R6.4.1") == "1R6.4.1"
+
+
 def test_is_valid_issue_date_rejects_invalid_format_and_nonexistent_date() -> None:
     today = datetime.date(2026, 1, 1)
 
