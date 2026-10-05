@@ -20,6 +20,7 @@ from doc_title_renamer import (
 )
 
 DEFAULT_LLM_URL = "http://localhost:1234/v1"
+REASONING_EFFORTS = ("none", "low", "medium", "high")
 ALLOWED_LLM_HOSTS = {"localhost", "127.0.0.1"}
 
 EXIT_OK = 0
@@ -90,6 +91,15 @@ def _add_common_arguments(subparser: argparse.ArgumentParser) -> None:
             "ローカルLLMへの1回あたりの問い合わせタイムアウト秒数（既定値: "
             f"{llm_client.REQUEST_TIMEOUT_SECONDS}秒。thinking対応モデル等、応答が"
             "遅い場合はここで延長する）"
+        ),
+    )
+    subparser.add_argument(
+        "--llm-reasoning-effort",
+        choices=REASONING_EFFORTS,
+        default=None,
+        help=(
+            "ローカルLLMのreasoning_effortを指定する（省略時は何も送らない）。"
+            "Ollamaでthinkingを無効化するにはnoneを指定する"
         ),
     )
     subparser.add_argument(
@@ -319,7 +329,11 @@ def run(args: argparse.Namespace) -> int:
             cleaned_markdown = md_cleaner.clean_markdown(markdown)
             print("  → LLMへ問い合わせ中...", flush=True)
             guess = llm_client.guess_title_and_date(
-                cleaned_markdown, args.llm_url, model, timeout=args.llm_timeout
+                cleaned_markdown,
+                args.llm_url,
+                model,
+                timeout=args.llm_timeout,
+                reasoning_effort=args.llm_reasoning_effort,
             )
             issue_date = guess.issue_date or _created_date(source)
             title = guess.title or source.stem

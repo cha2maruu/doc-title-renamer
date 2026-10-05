@@ -398,6 +398,23 @@ The CLI implements exactly **two subcommands**, `rename-only` and `organize`
   rather than fixed. The same timeout value applies to both the pre-flight
   connection check (model resolution / `check_connection`) and the actual
   title/issue-date inference call (4.6).
+- The reasoning (thinking) effort of the local LLM is configurable via
+  `--llm-reasoning-effort` (`none` / `low` / `medium` / `high`).
+  - **Default: unspecified, in which case nothing is sent.** The
+    `reasoning_effort` field is then omitted from the request body, so
+    server/model defaults apply unchanged.
+  - When specified, the value is sent as `reasoning_effort` in the
+    `/v1/chat/completions` request body of the title/issue-date inference
+    call (4.6). It is not sent to `GET /v1/models`.
+  - It stays within the OpenAI-compatible API shape; no server-specific
+    endpoint (e.g. Ollama's native `/api/chat` `think` field) is used.
+    Ollama's OpenAI-compatible endpoint accepts `none` to disable thinking.
+    Support for `none` in LM Studio is unverified (models such as gpt-oss
+    are understood to accept `low` / `medium` / `high`).
+  - If the server rejects the request (HTTP error) while the option is
+    specified, the structured-output fallback (4.6) is retried with the
+    same `reasoning_effort`; if that fails too, it is treated as a local
+    LLM connection error (4.12). The field is never silently dropped.
 
 ### 4.12 Behavior on local LLM connection failure
 
@@ -528,7 +545,7 @@ entirely.")
 
 - Target path: a single file or a folder
 - Subcommand: `rename-only` or `organize` (exactly one, see 4.2)
-- `--llm-url` / `--llm-model` / `--llm-timeout` (optional, see 4.11)
+- `--llm-url` / `--llm-model` / `--llm-timeout` / `--llm-reasoning-effort` (optional, see 4.11)
 - `--yes` (skips the confirmation prompt, see 4.10)
 - `--force-ocr` (always OCR PDFs, skipping text-layer detection, see 4.4)
 

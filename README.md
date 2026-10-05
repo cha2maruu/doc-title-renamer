@@ -39,6 +39,7 @@ uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer 
 | `--llm-url` | `http://localhost:1234/v1` | ローカルLLM（OpenAI互換API）のエンドポイント。`localhost` / `127.0.0.1` のみ指定可 |
 | `--llm-model` | 未指定（自動解決） | 使用するモデル名。省略時はローカルLLMのロード済みモデルから自動解決する |
 | `--llm-timeout` | `120`（秒） | ローカルLLMへの1回あたりの問い合わせタイムアウト秒数 |
+| `--llm-reasoning-effort` | 未指定（送信しない） | `none` / `low` / `medium` / `high`。指定時のみ `reasoning_effort` をリクエストに載せる。Ollamaでthinkingを止めるには `none` |
 | `--yes` | 無効 | 確認プロンプトを省略し、自動的に実行する |
 | `--force-ocr` | 無効 | PDFのテキストレイヤー自動判定を無視し、常にOCR（RapidOCR）で抽出する。docx/xlsx/pptxには影響しない |
 
@@ -46,6 +47,10 @@ uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer 
 # Ollama等、LM Studio以外のローカルLLMを使う場合の例
 uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer rename-only "C:\path\to\folder" \
   --llm-url http://localhost:11434/v1 --llm-model qwen3:8b
+
+# Ollamaでthinkingを無効化して高速化する例
+uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer rename-only "C:\path\to\folder" \
+  --llm-url http://localhost:11434/v1 --llm-model qwen3:8b --llm-reasoning-effort none
 
 # LLM応答が遅い環境向け: タイムアウトを300秒に延長
 uvx --from git+https://github.com/cha2maruu/doc-title-renamer doc-title-renamer rename-only "C:\path\to\folder" \
