@@ -22,7 +22,7 @@ def _configure_success(monkeypatch, *, title: str = "見積書") -> None:
     monkeypatch.setattr(
         cli.llm_client,
         "guess_title_and_date",
-        lambda markdown, url, model, timeout=None: TitleGuess(
+        lambda markdown, url, model, timeout=None, reasoning_effort=None: TitleGuess(
             title, datetime.date(2026, 4, 15), model
         ),
     )
@@ -536,7 +536,7 @@ def test_run_uses_title_and_created_date_fallbacks(
     monkeypatch.setattr(
         cli.llm_client,
         "guess_title_and_date",
-        lambda markdown, url, model, timeout=None: TitleGuess(None, None, model),
+        lambda markdown, url, model, timeout=None, reasoning_effort=None: TitleGuess(None, None, model),
     )
     monkeypatch.setattr(
         cli, "_created_date", lambda path: datetime.date(2025, 12, 3)
@@ -608,7 +608,7 @@ def test_run_forwards_llm_timeout_to_guess_title_and_date(
     _configure_success(monkeypatch)
     calls: list[float | None] = []
 
-    def fake_guess(markdown, url, model, timeout=None):
+    def fake_guess(markdown, url, model, timeout=None, reasoning_effort=None):
         calls.append(timeout)
         return TitleGuess("見積書", datetime.date(2026, 4, 15), model)
 
@@ -621,3 +621,42 @@ def test_run_forwards_llm_timeout_to_guess_title_and_date(
 
     assert cli.run(args) == cli.EXIT_OK
     assert calls == [5.0]
+
+
+def test_llm_reasoning_effort_defaults_to_none(tmp_path: Path) -> None:
+    args = cli.build_parser().parse_args(["rename-only", str(tmp_path)])
+
+    assert args.llm_reasoning_effort is None
+
+
+def test_llm_reasoning_effort_rejects_unknown_value(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            ["rename-only", str(tmp_path), "--llm-reasoning-effort", "extreme"]
+        )
+
+
+def test_run_forwards_llm_reasoning_effort_to_guess_title_and_date(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "document.pdf"
+    source.touch()
+    args = cli.build_parser().parse_args(
+        ["rename-only", str(source), "--llm-reasoning-effort", "none", "--yes"]
+    )
+    _configure_success(monkeypatch)
+    calls: list[str | None] = []
+
+    def fake_guess(markdown, url, model, timeout=None, reasoning_effort=None):
+        calls.append(reasoning_effort)
+        return TitleGuess("見積書", datetime.date(2026, 4, 15), model)
+
+    monkeypatch.setattr(cli.llm_client, "guess_title_and_date", fake_guess)
+    monkeypatch.setattr(
+        cli.renamer,
+        "apply_plan",
+        lambda plan: [RenameResult(src, dst, True) for src, dst in plan],
+    )
+
+    assert cli.run(args) == cli.EXIT_OK
+    assert calls == ["none"]

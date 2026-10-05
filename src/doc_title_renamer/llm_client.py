@@ -142,6 +142,7 @@ def _request_completion(
     *,
     structured_output: bool,
     timeout: float,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "model": model,
@@ -150,6 +151,8 @@ def _request_completion(
     }
     if structured_output:
         body["response_format"] = _response_format()
+    if reasoning_effort is not None:
+        body["reasoning_effort"] = reasoning_effort
     api_request = request.Request(
         _api_url(base_url, "chat/completions"),
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
@@ -193,6 +196,7 @@ def guess_title_and_date(
     base_url: str,
     model: str,
     timeout: float = REQUEST_TIMEOUT_SECONDS,
+    reasoning_effort: str | None = None,
 ) -> TitleGuess:
     messages = _build_messages(truncate_markdown(markdown_excerpt))
     structured_output = True
@@ -205,12 +209,18 @@ def guess_title_and_date(
                 messages,
                 structured_output=structured_output,
                 timeout=timeout,
+                reasoning_effort=reasoning_effort,
             )
         except LLMConnectionError as exc:
             if structured_output and isinstance(exc.__cause__, error.HTTPError):
                 structured_output = False
                 response = _request_completion(
-                    base_url, model, messages, structured_output=False, timeout=timeout
+                    base_url,
+                    model,
+                    messages,
+                    structured_output=False,
+                    timeout=timeout,
+                    reasoning_effort=reasoning_effort,
                 )
             else:
                 raise

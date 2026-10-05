@@ -255,3 +255,60 @@ def test_functions_default_to_module_timeout_constant(monkeypatch) -> None:
     llm_client.resolve_model("http://localhost:1234/v1", None)
 
     assert seen_timeouts == [llm_client.REQUEST_TIMEOUT_SECONDS]
+
+
+def test_guess_title_and_date_omits_reasoning_effort_by_default(monkeypatch) -> None:
+    bodies = []
+
+    def fake_urlopen(api_request, timeout):
+        bodies.append(json.loads(api_request.data))
+        return FakeResponse(completion('{"title":"件名","issue_date":null}'))
+
+    monkeypatch.setattr(llm_client.request, "urlopen", fake_urlopen)
+
+    llm_client.guess_title_and_date("document", "http://localhost:1234/v1", "model-a")
+
+    assert "reasoning_effort" not in bodies[0]
+
+
+def test_guess_title_and_date_sends_reasoning_effort_when_specified(
+    monkeypatch,
+) -> None:
+    bodies = []
+
+    def fake_urlopen(api_request, timeout):
+        bodies.append(json.loads(api_request.data))
+        return FakeResponse(completion('{"title":"件名","issue_date":null}'))
+
+    monkeypatch.setattr(llm_client.request, "urlopen", fake_urlopen)
+
+    llm_client.guess_title_and_date(
+        "document", "http://localhost:1234/v1", "model-a", reasoning_effort="none"
+    )
+
+    assert bodies[0]["reasoning_effort"] == "none"
+
+
+def test_reasoning_effort_is_kept_when_falling_back_from_response_format(
+    monkeypatch,
+) -> None:
+    bodies = []
+
+    def fake_urlopen(api_request, timeout):
+        body = json.loads(api_request.data)
+        bodies.append(body)
+        if "response_format" in body:
+            raise error.HTTPError(
+                api_request.full_url, 400, "unsupported", {}, io.BytesIO()
+            )
+        return FakeResponse(completion('{"title":"件名","issue_date":null}'))
+
+    monkeypatch.setattr(llm_client.request, "urlopen", fake_urlopen)
+
+    llm_client.guess_title_and_date(
+        "document", "http://localhost:1234/v1", "model-a", reasoning_effort="low"
+    )
+
+    assert len(bodies) == 2
+    assert "response_format" not in bodies[1]
+    assert bodies[1]["reasoning_effort"] == "low"
